@@ -10,6 +10,10 @@ pub enum OpenRouterLeaseSourceConfig {
         management_key: String,
         /// OpenRouter API base without `/v1`.
         api_base: String,
+        /// Public inference base handed to clients instead of `{api_base}/v1`,
+        /// for an OpenRouter-compatible key provider whose management API and
+        /// inference API live on different hosts.
+        inference_base: Option<String>,
     },
     /// Ask an OA org to relay key creation to a verifier-enrolled station.
     OaOrg {
@@ -31,10 +35,15 @@ impl OpenRouterLeaseSourceConfig {
 impl std::fmt::Debug for OpenRouterLeaseSourceConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::OpenRouter { api_base, .. } => formatter
+            Self::OpenRouter {
+                api_base,
+                inference_base,
+                ..
+            } => formatter
                 .debug_struct("OpenRouter")
                 .field("management_key", &"[configured]")
                 .field("api_base", api_base)
+                .field("inference_base", inference_base)
                 .finish(),
             Self::OaOrg { org_base_url, .. } => formatter
                 .debug_struct("OaOrg")

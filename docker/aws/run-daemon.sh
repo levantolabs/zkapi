@@ -45,6 +45,12 @@ case "${1:-}" in
         if [ -n "${OA_ORG_URL:-}" ]; then
             set -- "$@" --oa-org-url "$OA_ORG_URL"
         fi
+        if [ -n "${OPENROUTER_API_BASE:-}" ]; then
+            set -- "$@" --openrouter-api-base "$OPENROUTER_API_BASE"
+        fi
+        if [ -n "${OPENROUTER_INFERENCE_BASE:-}" ]; then
+            set -- "$@" --openrouter-inference-base "$OPENROUTER_INFERENCE_BASE"
+        fi
         exec "$@"
         ;;
     indexer)

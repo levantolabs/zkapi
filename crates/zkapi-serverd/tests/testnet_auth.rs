@@ -25,6 +25,7 @@ fn router(protected: bool) -> axum::Router {
             source: OpenRouterLeaseSourceConfig::OpenRouter {
                 management_key: "test-management-key".into(),
                 api_base: "http://127.0.0.1:9".into(),
+                inference_base: None,
             },
             ttl_seconds: 300,
             settlement_grace_seconds: 5,

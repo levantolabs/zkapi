@@ -108,9 +108,13 @@ impl RequestProcessor {
                 OpenRouterLeaseSourceConfig::OpenRouter {
                     management_key,
                     api_base,
+                    inference_base,
                 } => Some(
-                    OpenRouterProvisioner::new(management_key.clone(), api_base.clone())
-                        .map(Arc::new),
+                    OpenRouterProvisioner::new(management_key.clone(), api_base.clone()).map(
+                        |provisioner| {
+                            Arc::new(provisioner.with_inference_base(inference_base.clone()))
+                        },
+                    ),
                 ),
                 OpenRouterLeaseSourceConfig::OaOrg { .. } => None,
             })
@@ -1772,6 +1776,7 @@ mod tests {
                 OpenRouterLeaseSourceConfig::OpenRouter {
                     management_key: "test-secret".into(),
                     api_base: url.clone(),
+                    inference_base: None,
                 };
             processor.openrouter = Some(Arc::new(
                 OpenRouterProvisioner::new("test-secret".into(), url).unwrap(),
@@ -2397,6 +2402,7 @@ mod tests {
         config.source = OpenRouterLeaseSourceConfig::OpenRouter {
             management_key: "test".to_string(),
             api_base: url.clone(),
+            inference_base: None,
         };
         config.settlement_grace_seconds = grace;
         processor.openrouter = Some(Arc::new(
