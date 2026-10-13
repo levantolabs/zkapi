@@ -208,6 +208,31 @@ function uuid() {
     return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+// Levanto: a tab holds a Web Lock named after its owner id for its whole life,
+// and the browser releases it when the tab closes. Another tab may then retire a
+// key the closed tab owned instead of waiting until the key's settlement time.
+// Without Web Locks every owner counts as alive (the upstream behaviour).
+const TAB_ALIVE_LOCK_PREFIX = 'zkapi-tab-alive:';
+
+function holdTabAliveLock(ownerId) {
+    try {
+        navigator.locks?.request?.(`${TAB_ALIVE_LOCK_PREFIX}${ownerId}`, { mode: 'exclusive' }, () => new Promise(() => {}));
+    } catch {
+        // No Web Locks: owner liveness stays unknown, so other tabs keep waiting.
+    }
+}
+
+async function ownerTabAlive(ownerId) {
+    if (!ownerId || !navigator.locks?.query) return true;
+    try {
+        const { held = [], pending = [] } = await navigator.locks.query();
+        const name = `${TAB_ALIVE_LOCK_PREFIX}${ownerId}`;
+        return held.some(lock => lock.name === name) || pending.some(lock => lock.name === name);
+    } catch {
+        return true;
+    }
+}
+
 function browserTabOwnerId() {
     try {
         const existing = sessionStorage.getItem(TAB_OWNER_STORAGE_KEY);
@@ -274,6 +299,7 @@ class BrowserWalletRuntime extends EventTarget {
         // independently opened browser tab. That lets crash recovery retire a
         // lost in-memory key without allowing another live tab to take it.
         this.ownerId = browserTabOwnerId();
+        holdTabAliveLock(this.ownerId);
     }
 
     async init() {
@@ -1999,7 +2025,8 @@ class BrowserWalletRuntime extends EventTarget {
         await this.reload();
         if (this.runtime.lease
             && Number(this.runtime.lease.settle_after || this.runtime.lease.expires_at) > now
-            && this.runtime.lease.ownerId !== this.ownerId) {
+            && this.runtime.lease.ownerId !== this.ownerId
+            && await ownerTabAlive(this.runtime.lease.ownerId)) {
             throw new BrowserWalletHttpError(
                 `Another browser tab owns the current private key until ${new Date(Number(this.runtime.lease.settle_after || this.runtime.lease.expires_at) * 1000).toLocaleTimeString()}.`,
                 409,
@@ -2280,7 +2307,8 @@ class BrowserWalletRuntime extends EventTarget {
                     this.runtime.lease?.settle_after || this.runtime.lease?.expires_at
                 );
                 if (this.runtime.lease && ownershipDeadline > Math.floor(Date.now() / 1000)
-                    && this.runtime.lease.ownerId !== this.ownerId) {
+                    && this.runtime.lease.ownerId !== this.ownerId
+                    && await ownerTabAlive(this.runtime.lease.ownerId)) {
                     return false;
                 }
                 onProgress('settling', 'Finishing an interrupted private chat…');
