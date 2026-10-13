@@ -24,7 +24,7 @@ export function bufferedGasLimit(estimate) {
 // default to a fixed ~1-2 gwei tip, which on a ~6M-gas vault transaction costs
 // tens of dollars more than the network needs. maxFee = 2 x base + tip leaves
 // room for a few full blocks; the user can still edit both in the wallet.
-const MIN_PRIORITY_FEE_WEI = 20_000_000n; // 0.02 gwei
+const MIN_PRIORITY_FEE_WEI = 100_000_000n; // 0.1 gwei: lower tips can sit unmined (or fail in MetaMask Smart Transactions)
 const MAX_PRIORITY_FEE_WEI = 2_000_000_000n; // 2 gwei
 
 export async function suggestedFees(provider) {

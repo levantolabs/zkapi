@@ -159,7 +159,7 @@ async function depositFeeUsd(quote, usd) {
     const call = async (method, params) => (await (await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
     const block = await call('eth_getBlockByNumber', ['latest', false]);
-    const feeWei = DEPOSIT_GAS * (BigInt(block.baseFeePerGas) + 20_000_000n);
+    const feeWei = DEPOSIT_GAS * (BigInt(block.baseFeePerGas) + 100_000_000n);
     const depositWei = BigInt(quote.depositWei);
     return depositWei > 0n ? Number(feeWei * 1_000_000n / depositWei) / 1_000_000 * usd : null;
   } catch {
