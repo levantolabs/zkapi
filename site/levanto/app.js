@@ -34,7 +34,7 @@ function friendly(error) {
   if (error?.name === 'AbortError' || error?.isCancelled) return 'Cancelled.';
   if (/user (rejected|denied)|ACTION_REJECTED|4001/i.test(text)) return 'You cancelled the request in your wallet.';
   if (code === 'testnet_password_required' || /password/i.test(text)) return 'Enter the test password to continue.';
-  if (code === 'lease_tab_conflict') return 'This wallet is open in another tab. Close it and try again.';
+  if (code === 'lease_tab_conflict') return `${text.replace(/^Error:\s*/, '')} Use that tab, or come back then.`;
   if (code === 'lease_requests_in_flight') return 'A call is still running. Try again in a moment.';
   if (/failed to fetch|networkerror|load failed/i.test(text)) return 'Can\'t reach the network right now. Reload the page in a moment.';
   if (/requires at least/i.test(text)) return 'Your balance is below this spending cap. Pick a lower cap or deposit more.';
