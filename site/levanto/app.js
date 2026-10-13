@@ -17,7 +17,7 @@ const el = {
   depositTitle: $('deposit-title'), balanceView: $('balance-view'),
   balUsd: $('bal-usd'), balEth: $('bal-eth'), balExpiry: $('bal-expiry'),
   keyCap: $('key-cap'), key: $('btn-key'), keyView: $('key-view'), keySum: $('key-sum'), skill: $('btn-skill'),
-  withdrawTo: $('withdraw-to'), withdraw: $('btn-withdraw')
+  reset: $('btn-reset'), withdrawTo: $('withdraw-to'), withdraw: $('btn-withdraw')
 };
 
 let busy = false;
@@ -174,6 +174,7 @@ async function checkPendingDeposit() {
   pendingEth = pending ? client.formatBillingAmount(pending.amount) : null;
   el.depositUsd.disabled = Boolean(pendingEth);
   el.deposit.textContent = pendingEth ? 'Finish deposit' : 'Deposit';
+  el.reset.hidden = !pendingEth;
   if (pendingEth) el.depositQuote.textContent = `Unfinished deposit of ${trimEth(pendingEth)} ETH`;
   return pendingEth;
 }
@@ -204,6 +205,40 @@ el.connect.addEventListener('click', () => run('Waiting for your wallet…', asy
   await client.connectWallet();
   say('');
 }));
+
+// Start over: drop an unfinished deposit that never reached the vault (e.g. a
+// MetaMask transaction that was dropped), like clearing this site's data.
+const WALLET_DB = 'zkapi-browser-wallet-v1';
+const START_OVER_FLAG = 'zkapi-start-over';
+
+el.reset.addEventListener('click', () => run('Checking the unfinished deposit…', async () => {
+  const pending = await browserWalletRuntime.pendingDeposit();
+  if (!pending) { await checkPendingDeposit(); say(''); return; }
+  if (snap?.wallet?.has_note) throw new Error('You already have a balance here; nothing to start over.');
+  const busyWithdrawal = snap?.withdrawal || (snap?.withdrawals || []).some(w =>
+    ['submitted', 'submitted_late'].includes(w?.status) || (w?.mode === 'escape' && w?.status === 'confirmed'));
+  if (busyWithdrawal) throw new Error('A withdrawal is still in progress. Let it finish first.');
+  const note = await client.readBrowserNote(pending.next_note_id);
+  if (note.status !== 0 && BigInt(note.commitment) === BigInt(pending.commitment)) {
+    throw new Error('This deposit went through. Reload the page to see your balance.');
+  }
+  if (!window.confirm('Discard this unfinished deposit and start over?\n\nOnly do this if MetaMask shows it as failed or it was never sent. If it still went through later, that deposit would be lost.')) {
+    throw new DOMException('Cancelled.', 'AbortError');
+  }
+  try { localStorage.setItem(START_OVER_FLAG, '1'); } catch { /* reload still retries below */ }
+  location.reload();
+}));
+
+async function startOverIfRequested() {
+  let requested = false;
+  try { requested = localStorage.getItem(START_OVER_FLAG) === '1'; } catch { return; }
+  if (!requested) return;
+  await new Promise(resolve => {
+    const request = indexedDB.deleteDatabase(WALLET_DB);
+    request.onsuccess = request.onerror = request.onblocked = () => resolve();
+  });
+  try { localStorage.removeItem(START_OVER_FLAG); sessionStorage.clear(); } catch { /* ignore */ }
+}
 
 el.depositUsd.addEventListener('input', () => { clearTimeout(quoteDeposit.t); quoteDeposit.t = setTimeout(quoteDeposit, 300); });
 
@@ -318,6 +353,7 @@ document.addEventListener('click', event => {
 // ---- boot ---------------------------------------------------------------------------
 
 async function boot() {
+  await startOverIfRequested(); // before the SDK opens the wallet database
   $('net-pill').hidden = NETWORK !== 'sepolia';
   for (const tier of CHAT_SPENDING_TIER_USD) {
     const option = document.createElement('option'); option.value = String(tier); option.textContent = `$${tier}`;
