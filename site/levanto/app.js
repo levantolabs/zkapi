@@ -56,6 +56,20 @@ async function run(label, fn) {
   }
 }
 
+// A key being settled (usually after 40 s) blocks the next action; wait for it instead of failing.
+async function settled(fn) {
+  const deadline = Date.now() + 3 * 60_000;
+  for (;;) {
+    try { return await fn(); }
+    catch (error) {
+      const code = error?.code || error?.errorCode;
+      if (code !== 'lease_pending' || Date.now() > deadline) throw error;
+      say('Settling your last key. This takes about a minute…');
+      await new Promise(resolve => setTimeout(resolve, 10_000));
+    }
+  }
+}
+
 // ---- password (Sepolia only) -------------------------------------------------
 
 function requestTestnetPassword({ authenticate, signal }) {
@@ -168,10 +182,10 @@ function tabs() {
 
 async function acquire(cap) {
   await client.ensureTestnetAccess({ interactive: true });
-  return client.acquireInferenceAccess(SESSION, {
+  return settled(() => client.acquireInferenceAccess(SESSION, {
     spendingLimitUsd: cap,
     onProgress: p => { if (p?.message) say(p.message); }
-  });
+  }));
 }
 
 el.ask.addEventListener('click', () => run('Getting a private key…', async () => {
@@ -234,7 +248,7 @@ el.withdraw.addEventListener('click', () => run('Preparing your withdrawal…', 
   if (!window.confirm(`Withdraw your whole balance to ${target} on ${NETWORK === 'sepolia' ? 'Sepolia' : 'Ethereum'}?`)) {
     throw new DOMException('Withdrawal cancelled.', 'AbortError');
   }
-  await client.withdraw('mutual', message => say(message), to ? { destination: to } : {});
+  await settled(() => client.withdraw('mutual', message => say(message), to ? { destination: to } : {}));
   say('Withdrawal sent.');
 }));
 
