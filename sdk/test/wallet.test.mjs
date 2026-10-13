@@ -72,6 +72,16 @@ function withdrawalPlan(mode = "mutual") {
   };
 }
 
+test("a vault address with a leading zero matches its field-element form", () => {
+  const plan = withdrawalPlan("mutual");
+  plan.public_inputs.contract_address = "0x2ec7aef75f8162f46468e5a95305ec4772540a3";
+  const destination = "0x2222222222222222222222222222222222222222";
+  assert.ok(wallet.encodeWithdrawal(plan, "mutual", destination, "0x02ec7aef75f8162f46468e5a95305ec4772540a3")
+    .startsWith(`0x${wallet.ABI.mutualClose}`));
+  assert.throws(() => wallet.encodeWithdrawal(plan, "mutual", destination, "0x12ec7aef75f8162f46468e5a95305ec4772540a3"),
+    /different vault/);
+});
+
 test("mutual-close calldata encodes the exact static tuple, dynamic proof, and path", () => {
   const plan = withdrawalPlan("mutual");
   const destination = "0x2222222222222222222222222222222222222222";
