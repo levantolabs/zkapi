@@ -19,3 +19,28 @@ export function bufferedGasLimit(estimate) {
     }
     return `0x${buffered.toString(16)}`;
 }
+
+// Levanto: suggest EIP-1559 fees instead of leaving them to the wallet. Wallets
+// default to a fixed ~1-2 gwei tip, which on a ~6M-gas vault transaction costs
+// tens of dollars more than the network needs. maxFee = 2 x base + tip leaves
+// room for a few full blocks; the user can still edit both in the wallet.
+const MIN_PRIORITY_FEE_WEI = 20_000_000n; // 0.02 gwei
+const MAX_PRIORITY_FEE_WEI = 2_000_000_000n; // 2 gwei
+
+export async function suggestedFees(provider) {
+    const block = await provider.request({ method: 'eth_getBlockByNumber', params: ['latest', false] });
+    if (!block?.baseFeePerGas) return null;
+    const base = BigInt(block.baseFeePerGas);
+    let tip = MIN_PRIORITY_FEE_WEI;
+    try {
+        const suggested = BigInt(await provider.request({ method: 'eth_maxPriorityFeePerGas', params: [] }));
+        tip = suggested < MIN_PRIORITY_FEE_WEI ? MIN_PRIORITY_FEE_WEI
+            : suggested > MAX_PRIORITY_FEE_WEI ? MAX_PRIORITY_FEE_WEI : suggested;
+    } catch {
+        // Keep the floor.
+    }
+    return {
+        maxPriorityFeePerGas: `0x${tip.toString(16)}`,
+        maxFeePerGas: `0x${(base * 2n + tip).toString(16)}`
+    };
+}

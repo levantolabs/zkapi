@@ -3,7 +3,7 @@ import { isNativeEthFunding, validateNativeFunding, assertNativeVault, validateN
 import { beginBrowserSdkInitialization } from '../configure.js';
 import browserWalletRuntime from './browserWalletRuntime.js';
 import { contractEstimateError, contractRevertSelector } from './zkapiContractError.mjs';
-import { bufferedGasLimit } from './zkapiGas.mjs';
+import { bufferedGasLimit, suggestedFees } from './zkapiGas.mjs';
 import { normalizeWalletError, walletErrorMessage } from './zkapiWalletError.mjs';
 import { backgroundWithdrawalClaims, isUnsubmittedParkedMutualWithdrawal } from './zkapiWithdrawalRecovery.mjs';
 import { deriveExpiryRecords, readFinalizedExpiryClaims } from './zkapiExpiryHistory.mjs';
@@ -1291,6 +1291,13 @@ class ZkapiClient extends EventTarget {
                 params: [transaction]
             });
             transaction.gas = bufferedGasLimit(estimate);
+            // Levanto: suggest realistic fees; on failure the wallet decides as before.
+            try {
+                const fees = await suggestedFees(this.ethereum);
+                if (fees) Object.assign(transaction, fees);
+            } catch {
+                // Leave fee fields to the wallet.
+            }
         } catch (error) {
             if (error?.code === 'wrong_network'
                 || error?.code === 'transaction_gas_limit_exceeded') {
