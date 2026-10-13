@@ -3,7 +3,7 @@
 import { configureBrowserSdk, zkapiClient as client, CHAT_SPENDING_TIER_USD } from '../../sdk/index.js';
 
 const NETWORK = document.body.dataset.network; // 'sepolia' | 'mainnet', set at build time
-const SAGE_MODEL = 'levanto-sage-v1.3';
+const SAGE_MODEL = 'sage-latest'; // alias that follows Sage upgrades
 const SESSION = 'levanto-zkapi-page';
 const MAX_DEPOSIT_USD = 50;
 
@@ -38,6 +38,7 @@ function friendly(error) {
   if (code === 'lease_requests_in_flight') return 'A call is still running. Try again in a moment.';
   if (/failed to fetch|networkerror|load failed/i.test(text)) return 'Can\'t reach the network right now. Reload the page in a moment.';
   if (/requires at least/i.test(text)) return 'Your balance is below this spending cap. Pick a lower cap or deposit more.';
+  if (text === '[object Object]') return 'Something went wrong. Try again.';
   return text.replace(/^Error:\s*/, '') || 'Something went wrong.';
 }
 
@@ -193,7 +194,10 @@ el.ask.addEventListener('click', () => run('Getting a private key…', async () 
     access.release();
   }
   if (response.status === 402) throw new Error('This key is used up or expired. Ask again for a new one.');
-  if (!response.ok) throw new Error(body?.detail || `Sage returned ${response.status}.`);
+  if (!response.ok) {
+    const detail = Array.isArray(body?.detail) ? body.detail.map(d => d?.msg).filter(Boolean).join('; ') : body?.detail;
+    throw new Error(detail || `Sage returned ${response.status}.`);
+  }
   const p = Number(body?.answers?.q?.noul);
   const tokens = body?.usage?.input_tokens;
   el.answer.hidden = false;
