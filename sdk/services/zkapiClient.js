@@ -1286,10 +1286,28 @@ class ZkapiClient extends EventTarget {
             // create an invalid 21M-gas transaction. Preflight the exact call
             // and set only a bounded gas limit; MetaMask still chooses all
             // EIP-1559 fee fields and the user remains in control of the rate.
-            const estimate = await this.ethereum.request({
-                method: 'eth_estimateGas',
-                params: [transaction]
-            });
+            let estimate;
+            try {
+                estimate = await this.ethereum.request({
+                    method: 'eth_estimateGas',
+                    params: [transaction]
+                });
+            } catch (estimateError) {
+                // Levanto: a short balance makes the estimate fail before the wallet
+                // can offer to add funds (nodes word it differently, so check the
+                // balance itself). Vault calls use ~6.2-6.4M gas.
+                let short = /insufficient funds|exceeds balance/i.test(String(estimateError?.message || ''));
+                if (!short && BigInt(value) > 0n) {
+                    try {
+                        const balance = BigInt(await this.ethereum.request({ method: 'eth_getBalance', params: [from, 'latest'] }));
+                        short = balance < BigInt(value);
+                    } catch {
+                        short = false;
+                    }
+                }
+                if (!short) throw estimateError;
+                estimate = 6_500_000n;
+            }
             transaction.gas = bufferedGasLimit(estimate);
             // Levanto: suggest realistic fees; on failure the wallet decides as before.
             try {
@@ -1830,7 +1848,8 @@ class ZkapiClient extends EventTarget {
             }
         }
         const balance = BigInt(await this.ethereum.request({ method: 'eth_getBalance', params: [address, 'latest'] }));
-        if (balance < nativeDepositValue(amount, funding)) throw new Error('Your wallet needs more ETH for this deposit and its network fee.');
+        // Levanto: don't block a short balance; MetaMask can offer to buy, swap or bridge.
+        if (balance < nativeDepositValue(amount, funding)) onStatus('Your wallet has less ETH than this deposit. MetaMask can help you add funds.');
 
         onStatus('Generating the private note commitment locally…');
         let plan = await browserWalletRuntime.prepareDeposit(Number(amount), { preparedOperationId });
