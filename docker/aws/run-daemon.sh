@@ -56,6 +56,7 @@ case "${1:-}" in
     indexer)
         require RPC_URL
         exec zkapi-indexerd --listen 0.0.0.0:3001 --rpc-url "$RPC_URL" \
+            --poll-interval-ms "${INDEXER_POLL_INTERVAL_MS:-1000}" \
             --contract-address "$VAULT_ADDRESS" --from-block "$DEPLOY_BLOCK" \
             --cursor-path /data/indexer.cursor
         ;;
@@ -64,6 +65,7 @@ case "${1:-}" in
         exec zkapi-challenged --indexer-url http://indexer:3001 \
             --chain-id "$CHAIN_ID" --contract-address "$VAULT_ADDRESS" \
             --from-block "$DEPLOY_BLOCK" --confirmations "${CHALLENGE_CONFIRMATIONS:-2}" \
+            --poll-interval-ms "${CHALLENGER_POLL_INTERVAL_MS:-1000}" \
             --db-path /data/server.db --checkpoint /data/challenges.json \
             --proof-setup-dir "$ZKAPI_PROOF_SETUP_DIR"
         ;;
