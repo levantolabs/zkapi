@@ -6,7 +6,9 @@ import { configureBrowserSdk, zkapiClient as client, browserWalletRuntime, CHAT_
 const NETWORK = document.body.dataset.network; // 'sepolia' | 'mainnet', set at build time
 const SAGE_BASE = 'https://sage.levanto.ai';
 const SESSION = 'levanto-zkapi-page';
+const MIN_DEPOSIT_USD = 10;
 const MAX_DEPOSIT_USD = 50;
+const DEPOSIT_GAS = 6_300_000n; // measured: 6.19M on mainnet and Sepolia
 
 const $ = id => document.getElementById(id);
 const el = {
@@ -148,12 +150,30 @@ const trimEth = v => String(v).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/
 
 // ---- actions ---------------------------------------------------------------------
 
+// Network fee for a deposit at the current base fee plus a small tip, in USD.
+async function depositFeeUsd(quote, usd) {
+  try {
+    const rpc = browserWalletRuntime.browserConfig?.trusted_deployment?.rpc_url;
+    if (!rpc) return null;
+    const call = async (method, params) => (await (await fetch(rpc, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) })).json()).result;
+    const block = await call('eth_getBlockByNumber', ['latest', false]);
+    const feeWei = DEPOSIT_GAS * (BigInt(block.baseFeePerGas) + 20_000_000n);
+    const depositWei = BigInt(quote.depositWei);
+    return depositWei > 0n ? Number(feeWei * 1_000_000n / depositWei) / 1_000_000 * usd : null;
+  } catch {
+    return null;
+  }
+}
+
 async function quoteDeposit() {
   const usd = Number(el.depositUsd.value);
-  if (!(usd >= 1 && usd <= MAX_DEPOSIT_USD)) { el.depositQuote.textContent = `Choose $1 to $${MAX_DEPOSIT_USD}.`; return null; }
+  if (!(usd >= MIN_DEPOSIT_USD && usd <= MAX_DEPOSIT_USD)) { el.depositQuote.textContent = `Choose $${MIN_DEPOSIT_USD} to $${MAX_DEPOSIT_USD}.`; return null; }
   try {
     const quote = await client.quoteDepositUsd(String(usd));
     el.depositQuote.textContent = `≈ ${trimEth(quote.ethAmount)} ETH`;
+    const fee = await depositFeeUsd(quote, usd);
+    if (fee != null) el.depositQuote.textContent = `≈ ${trimEth(quote.ethAmount)} ETH + ~$${fee < 1 ? fee.toFixed(2) : fee.toFixed(1)} network fee`;
     return quote;
   } catch (error) {
     el.depositQuote.textContent = error?.code === 'testnet_password_required' ? 'Enter the test password to see the ETH amount.' : '';
@@ -176,7 +196,7 @@ el.depositUsd.addEventListener('input', () => { clearTimeout(quoteDeposit.t); qu
 
 el.deposit.addEventListener('click', () => run('Preparing your deposit…', async () => {
   const quote = await quoteDeposit();
-  if (!quote) throw new Error('Enter an amount between $1 and $50.');
+  if (!quote) throw new Error(`Enter an amount between $${MIN_DEPOSIT_USD} and $${MAX_DEPOSIT_USD}.`);
   await client.deposit(quote.ethAmount, message => say(message));
   say('Deposit confirmed. Your private balance is ready.');
 }));
