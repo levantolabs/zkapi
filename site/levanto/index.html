@@ -25,7 +25,7 @@
 
       <ol class="how">
         <li><b>Deposit</b> ETH once.</li>
-        <li><b>Get a key</b> for your agent. It lasts 30 days.</li>
+        <li><b>Get a key</b> for your agent. It lasts up to 30 days.</li>
         <li><b>Your agent calls Sage.</b> You pay only what it uses.</li>
       </ol>
     </div>
@@ -74,9 +74,14 @@
           <div class="body">
             <div class="row">
               <label class="inline">Cap <select id="key-cap"></select></label>
+              <label class="inline">Valid <select id="key-ttl">
+                <option value="86400">1 day</option>
+                <option value="604800">7 days</option>
+                <option value="2592000" selected>30 days</option>
+              </select></label>
               <button id="btn-key" disabled>Get key</button>
             </div>
-            <p class="hint">Valid 30 days. Your agent can spend up to the cap.</p>
+            <p class="hint">Your agent can spend up to the cap until the key expires.</p>
             <div id="key-view" class="keybox" hidden>
               <div class="kv"><span>Key</span><code id="key-value"></code><button class="ghost small" data-copy="key-value">Copy</button></div>
               <div class="kv"><span>Expires</span><code id="key-exp"></code></div>

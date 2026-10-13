@@ -16,7 +16,7 @@ const el = {
   depositUsd: $('deposit-usd'), depositQuote: $('deposit-quote'), deposit: $('btn-deposit'),
   depositTitle: $('deposit-title'), balanceView: $('balance-view'),
   balUsd: $('bal-usd'), balEth: $('bal-eth'), balExpiry: $('bal-expiry'),
-  keyCap: $('key-cap'), key: $('btn-key'), keyView: $('key-view'), keySum: $('key-sum'), skill: $('btn-skill'),
+  keyCap: $('key-cap'), keyTtl: $('key-ttl'), key: $('btn-key'), keyView: $('key-view'), keySum: $('key-sum'), skill: $('btn-skill'),
   reset: $('btn-reset'), withdrawTo: $('withdraw-to'), withdraw: $('btn-withdraw')
 };
 
@@ -276,15 +276,17 @@ async function acquire(cap) {
 
 el.key.addEventListener('click', () => run('Getting a key…', async () => {
   const cap = Number(el.keyCap.value);
+  const ttl = Number(el.keyTtl.value);
   const live = activeLease();
-  if (live && !(issued && issued.cap === cap && issued.expires.getTime() === live.expires.getTime())
+  if (live && !(issued && issued.cap === cap && issued.ttl === ttl && issued.expires.getTime() === live.expires.getTime())
       && !window.confirm(`An agent key is active until ${fmtDate(live.expires)}. A new key ends it. Continue?`)) {
     throw new DOMException('Cancelled.', 'AbortError');
   }
+  browserWalletRuntime.setRequestedLeaseTtl(ttl);
   const access = await acquire(cap);
   access.release(); // The agent calls with it, not this page.
   const lease = activeLease();
-  issued = { apiKey: access.apiKey, expires: lease?.expires || new Date(Date.now() + 30 * 86400_000), cap };
+  issued = { apiKey: access.apiKey, expires: lease?.expires || new Date(Date.now() + ttl * 1000), cap, ttl };
   $('key-value').textContent = issued.apiKey;
   $('key-exp').textContent = fmtDate(issued.expires);
   el.keyView.hidden = false;
