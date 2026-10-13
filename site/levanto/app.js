@@ -143,7 +143,8 @@ function activeLease() {
   // After a reload the key is only in the agent's hands; the SDK still keeps its record.
   const l = snap?.config?.active_lease || browserWalletRuntime.runtime?.lease;
   const expires = l?.expires_at ? new Date(Number(l.expires_at) * 1000) : null;
-  return expires && expires > new Date() ? { expires, cap: Number(l.spending_limit_usd) } : null;
+  // The cap comes back via ETH and rounds to e.g. 6.000002: show whole cents.
+  return expires && expires > new Date() ? { expires, cap: Math.round(Number(l.spending_limit_usd) * 100) / 100 } : null;
 }
 const fmtDate = d => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
