@@ -302,6 +302,13 @@ class BrowserWalletRuntime extends EventTarget {
         holdTabAliveLock(this.ownerId);
     }
 
+    /** Levanto: lifetime to request for new keys, in seconds (null = server default). */
+    setRequestedLeaseTtl(seconds) {
+        const value = seconds == null ? null : Math.floor(Number(seconds));
+        if (value !== null && !(Number.isSafeInteger(value) && value > 0)) throw new Error('Invalid key lifetime.');
+        this.requestedLeaseTtlSeconds = value;
+    }
+
     async init() {
         beginBrowserSdkInitialization();
         if (this.initPromise) return this.initPromise;
@@ -1683,7 +1690,13 @@ class BrowserWalletRuntime extends EventTarget {
             },
             state: this.runtime.state,
             args: {
-                payload: JSON.stringify({ mode: 'openrouter_ephemeral_lease', version: 1, billing_quote: quote }),
+                payload: JSON.stringify({
+                    mode: 'openrouter_ephemeral_lease',
+                    version: 1,
+                    billing_quote: quote,
+                    // Levanto: requested key lifetime (the server clamps it).
+                    ...(this.requestedLeaseTtlSeconds ? { ttl_seconds: this.requestedLeaseTtlSeconds } : {})
+                }),
                 active_root: path.active_root,
                 merkle_siblings: path.siblings,
                 client_request_id: uuid(),
@@ -1704,6 +1717,10 @@ class BrowserWalletRuntime extends EventTarget {
             || !lease.api_key
             || Number(lease.expires_at) <= Math.floor(Date.now() / 1000)) {
             throw new Error('The zkAPI server returned an unusable OpenRouter lease.');
+        }
+        if (this.requestedLeaseTtlSeconds
+            && Number(lease.expires_at) > Math.floor(Date.now() / 1000) + this.requestedLeaseTtlSeconds + 300) {
+            throw new Error('The zkAPI server returned a key that outlives the requested lifetime.');
         }
         validateNativeQuote(expectedQuote, this.config.funding, { allowExpired: true });
         if (!sameNativeQuote(lease.billing_quote, expectedQuote)
@@ -1895,6 +1912,7 @@ class BrowserWalletRuntime extends EventTarget {
                 ...lease,
                 sessionId,
                 selectedSpendingLimitUsd: Number(spendingLimitUsd),
+                requestedTtlSeconds: this.requestedLeaseTtlSeconds || null,
                 inFlight: 0
             };
             await this.commit({
@@ -2005,7 +2023,8 @@ class BrowserWalletRuntime extends EventTarget {
         const now = Math.floor(Date.now() / 1000);
         const isSafeForNewRequest = this.activeLease
             && Number(this.activeLease.expires_at) > now + MIN_REQUEST_LEASE_REMAINING_SECONDS;
-        const activeLeaseMatchesPolicy = this.activeLease?.selectedSpendingLimitUsd === spendingLimitUsd;
+        const activeLeaseMatchesPolicy = this.activeLease?.selectedSpendingLimitUsd === spendingLimitUsd
+            && (this.activeLease?.requestedTtlSeconds || null) === (this.requestedLeaseTtlSeconds || null);
         if (this.activeLease
             && isSafeForNewRequest
             && activeLeaseMatchesPolicy
