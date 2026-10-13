@@ -22,6 +22,7 @@ const el = {
 
 let busy = false;
 let snap = null;
+let pendingEth = null; // amount of an unfinished deposit, which must be retried as is
 let issued = null; // { apiKey, expires: Date, cap } for the key shown on this page
 
 // ---- status ---------------------------------------------------------------
@@ -166,7 +167,19 @@ async function depositFeeUsd(quote, usd) {
   }
 }
 
+// A deposit whose MetaMask prompt was cancelled (or lost) stays recorded with its
+// exact ETH amount: the SDK only retries that amount, so don't re-quote it.
+async function checkPendingDeposit() {
+  const pending = await browserWalletRuntime.pendingDeposit?.().catch(() => null);
+  pendingEth = pending ? client.formatBillingAmount(pending.amount) : null;
+  el.depositUsd.disabled = Boolean(pendingEth);
+  el.deposit.textContent = pendingEth ? 'Finish deposit' : 'Deposit';
+  if (pendingEth) el.depositQuote.textContent = `Unfinished deposit of ${trimEth(pendingEth)} ETH`;
+  return pendingEth;
+}
+
 async function quoteDeposit() {
+  if (await checkPendingDeposit()) return { ethAmount: pendingEth };
   const usd = Number(el.depositUsd.value);
   if (!(usd >= MIN_DEPOSIT_USD && usd <= MAX_DEPOSIT_USD)) { el.depositQuote.textContent = `Choose $${MIN_DEPOSIT_USD} to $${MAX_DEPOSIT_USD}.`; return null; }
   try {
@@ -197,7 +210,11 @@ el.depositUsd.addEventListener('input', () => { clearTimeout(quoteDeposit.t); qu
 el.deposit.addEventListener('click', () => run('Preparing your deposit…', async () => {
   const quote = await quoteDeposit();
   if (!quote) throw new Error(`Enter an amount between $${MIN_DEPOSIT_USD} and $${MAX_DEPOSIT_USD}.`);
-  await client.deposit(quote.ethAmount, message => say(message));
+  try {
+    await client.deposit(quote.ethAmount, message => say(message));
+  } finally {
+    await checkPendingDeposit();
+  }
   say('Deposit confirmed. Your private balance is ready.');
 }));
 
