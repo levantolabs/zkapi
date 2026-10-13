@@ -42,6 +42,10 @@ pub struct ApiRequestV2 {
 pub struct OpenRouterLeaseAuthorization {
     pub mode: String,
     pub version: u16,
+    /// Levanto: requested key lifetime. The server clamps it to its own range
+    /// and uses its configured lifetime when absent (upstream clients).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttl_seconds: Option<u64>,
 }
 
 impl Default for OpenRouterLeaseAuthorization {
@@ -49,7 +53,16 @@ impl Default for OpenRouterLeaseAuthorization {
         Self {
             mode: "openrouter_ephemeral_lease".to_string(),
             version: 1,
+            ttl_seconds: None,
         }
+    }
+}
+
+impl OpenRouterLeaseAuthorization {
+    /// Mode and version are the supported lease format (any requested lifetime).
+    pub fn is_supported(&self) -> bool {
+        let supported = Self::default();
+        self.mode == supported.mode && self.version == supported.version
     }
 }
 

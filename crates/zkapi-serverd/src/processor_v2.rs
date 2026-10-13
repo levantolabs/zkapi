@@ -38,6 +38,32 @@ const MAX_FUTURE_SKEW_SECONDS: u64 = 30;
 // usable lease end and leave room for clock skew and in-flight requests.
 const OA_LEASE_EXPIRY_SAFETY_SECONDS: u64 = 30;
 
+/// Levanto: shortest lifetime a client may request for a lease key.
+const MIN_LEASE_TTL_SECONDS: u64 = 3600;
+
+/// Levanto: the lease lifetime to use, honouring a client's request within
+/// [MIN_LEASE_TTL_SECONDS, configured]; the configured lifetime when absent.
+fn effective_lease_ttl(requested: Option<u64>, configured: u64) -> u64 {
+    requested
+        .map(|ttl| ttl.clamp(MIN_LEASE_TTL_SECONDS.min(configured), configured))
+        .unwrap_or(configured)
+}
+
+#[cfg(test)]
+mod levanto_lease_ttl_tests {
+    use super::effective_lease_ttl;
+
+    #[test]
+    fn requested_lifetime_is_clamped_to_the_configured_range() {
+        let month = 30 * 86_400;
+        assert_eq!(effective_lease_ttl(None, month), month);
+        assert_eq!(effective_lease_ttl(Some(86_400), month), 86_400);
+        assert_eq!(effective_lease_ttl(Some(60), month), 3_600);
+        assert_eq!(effective_lease_ttl(Some(90 * 86_400), month), month);
+        assert_eq!(effective_lease_ttl(Some(86_400), 300), 300);
+    }
+}
+
 pub struct RequestProcessor {
     config: ServerConfig,
     store: Arc<NullifierStore>,
@@ -291,7 +317,7 @@ impl RequestProcessor {
         request: &ApiRequestV2,
     ) -> Result<IssuedOpenRouterLease, ServerError> {
         let (authorization, billing_quote) = self.lease_authorization(request)?;
-        if authorization != OpenRouterLeaseAuthorization::default() {
+        if !authorization.is_supported() {
             return Err(ServerError::InvalidRequest(
                 "unsupported OpenRouter lease authorization".to_string(),
             ));
@@ -424,7 +450,8 @@ impl RequestProcessor {
                 }
             }
         }
-        let requested_expires_at = current_timestamp().saturating_add(lease_config.ttl_seconds);
+        let ttl_seconds = effective_lease_ttl(authorization.ttl_seconds, lease_config.ttl_seconds);
+        let requested_expires_at = current_timestamp().saturating_add(ttl_seconds);
         if !resume_provisioning {
             self.store.create_openrouter_lease_with_oa_id(
                 request,
@@ -561,7 +588,7 @@ impl RequestProcessor {
         request: &ApiRequestV2,
     ) -> Result<serde_json::Value, ServerError> {
         let (authorization, quote) = self.lease_authorization(request)?;
-        if authorization != OpenRouterLeaseAuthorization::default()
+        if !authorization.is_supported()
             || request.client_request_id != client_request_id
             || canonical_payload_hash(request.payload.as_bytes()) != request.payload_hash
         {
@@ -816,7 +843,7 @@ impl RequestProcessor {
             || public.contract_address != self.config.contract_address
             || public.state_signing_key_x != signing_key.x
             || public.state_signing_key_y != signing_key.y
-            || self.lease_authorization(request)?.0 != OpenRouterLeaseAuthorization::default()
+            || !self.lease_authorization(request)?.0.is_supported()
             || lease.spending_limit_usd.to_bits()
                 != pricing::micro_usd_to_usd(self.lease_limit_micro_usd(request)?).to_bits()
         {
