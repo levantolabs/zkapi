@@ -143,6 +143,12 @@ function walletNonceNumber(value, depth = 0) {
     return Number(quantity);
 }
 
+
+// Levanto: field-element formatting drops leading zeros from addresses; compare numerically.
+function sameNumericAddress(a, b) {
+    try { return a != null && b != null && BigInt(String(a)) === BigInt(String(b)); } catch { return false; }
+}
+
 class ZkapiClient extends EventTarget {
     constructor() {
         super();
@@ -2811,8 +2817,7 @@ class ZkapiClient extends EventTarget {
             try {
             const sameDeployment = attempt.deploymentId === browserWalletRuntime.manifest?.deployment_id
                 && Number(attempt.chainId) === Number(this.config?.funding?.chain_id)
-                && String(attempt.contractAddress || '').toLowerCase()
-                    === String(this.config?.funding?.contract_address || '').toLowerCase();
+                && sameNumericAddress(attempt.contractAddress, this.config?.funding?.contract_address);
             if (!sameDeployment || !/^0x[0-9a-fA-F]{64}$/.test(attempt.transactionHash || '')) {
                 await browserWalletRuntime.updateLateWithdrawalAttempt(
                     attempt.operationId,

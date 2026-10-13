@@ -364,7 +364,9 @@ async function main() {
         assert.equal(primary.status.state.note.current_balance, DEPOSIT);
         await save('deposit-receipt.json', primary.receipt);
         console.log('Deposited a fresh genesis note; starting the actual HTTP protocol server.');
-        const mock = mockProvider();
+        const mock = process.env.ZKAPI_ACCEPTANCE_PROVIDER_MODULE
+            ? (await import(pathToFileURL(path.resolve(process.env.ZKAPI_ACCEPTANCE_PROVIDER_MODULE)).href)).provider()
+            : mockProvider();
         const providerUrl = await serve(mock.handler);
         const feed = '0x0000000000000000000000000000000000001234';
         const quoteTimestamp = Math.floor(Date.now() / 1000) - 1;

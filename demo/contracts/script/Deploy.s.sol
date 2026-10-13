@@ -22,7 +22,9 @@ import {Groth16ProofAdapter} from "zkapi-contracts/adapters/Groth16ProofAdapter.
 ///           CHAIN_ID – optional expected chain ID; mismatches abort deployment.
 ///           REQUEST_CHARGE_CAP – positive per-request gwei limit; defaults to 1,000,000.
 contract DeployScript is Script {
-    uint64 internal constant NOTE_TTL = 30 days;
+    // Levanto: 90 days (owner decision D7, docs/zkapi/OPERATOR_PLAN.md in brooklyn-serve).
+    // After it, claimExpired pays a note's whole remaining balance to the treasury.
+    uint64 internal constant NOTE_TTL = 90 days;
 
     function run() external {
         require(block.chainid == vm.envOr("CHAIN_ID", block.chainid), "CHAIN_ID does not match RPC");

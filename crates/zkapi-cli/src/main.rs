@@ -46,6 +46,10 @@ enum Commands {
         /// OpenRouter management API base for direct lease provisioning.
         #[arg(long, default_value = "https://openrouter.ai/api")]
         openrouter_api_base: String,
+        /// Inference base returned to clients with each lease, when it differs
+        /// from `{openrouter_api_base}/v1` (an OpenRouter-compatible provider).
+        #[arg(long)]
+        openrouter_inference_base: Option<String>,
         /// OpenRouter Management API key used only to mint bounded runtime leases.
         #[arg(long)]
         openrouter_management_key: Option<String>,
@@ -141,6 +145,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Serverd {
             listen,
             openrouter_api_base,
+            openrouter_inference_base,
             openrouter_management_key,
             oa_org_url,
             openrouter_lease_ttl_seconds,
@@ -178,6 +183,7 @@ async fn main() -> anyhow::Result<()> {
                     Some(OpenRouterLeaseSourceConfig::OpenRouter {
                         management_key,
                         api_base: openrouter_api_base_for_leases,
+                        inference_base: openrouter_inference_base,
                     })
                 }
                 (None, Some(org_base_url), Some(shared_secret)) => {

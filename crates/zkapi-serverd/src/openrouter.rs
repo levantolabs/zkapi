@@ -23,6 +23,7 @@ pub struct OpenRouterProvisioner {
     http: reqwest::Client,
     management_key: String,
     base: String,
+    inference_base: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -73,11 +74,21 @@ impl OpenRouterProvisioner {
             http,
             management_key,
             base: base.trim_end_matches('/').to_string(),
+            inference_base: None,
         })
     }
 
+    /// Hand clients this inference base instead of `{base}/v1`.
+    pub fn with_inference_base(mut self, inference_base: Option<String>) -> Self {
+        self.inference_base = inference_base.map(|base| base.trim_end_matches('/').to_string());
+        self
+    }
+
     pub fn inference_base(&self) -> String {
-        format!("{}/v1", self.base)
+        match &self.inference_base {
+            Some(base) => base.clone(),
+            None => format!("{}/v1", self.base),
+        }
     }
 
     fn keys_url(&self) -> String {
@@ -393,6 +404,18 @@ mod tests {
             "2026-08-12T20:23:54.001Z",
             expected
         ));
+    }
+
+    #[test]
+    fn inference_base_defaults_to_management_base_and_can_be_overridden() {
+        let direct =
+            OpenRouterProvisioner::new("k".into(), "https://openrouter.ai/api/".into()).unwrap();
+        assert_eq!(direct.inference_base(), "https://openrouter.ai/api/v1");
+        let levanto =
+            OpenRouterProvisioner::new("k".into(), "https://billing.example/zkapi".into())
+                .unwrap()
+                .with_inference_base(Some("https://sage.example/v1/".into()));
+        assert_eq!(levanto.inference_base(), "https://sage.example/v1");
     }
 
     #[test]

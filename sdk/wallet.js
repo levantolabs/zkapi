@@ -111,6 +111,12 @@ function destinationHex(value) {
   return `0x${bytesHex(value)}`;
 }
 
+// Levanto: the proof's public inputs carry the vault as a field element, which
+// drops leading zeros ("0x2ec7…" for vault 0x02ec7…). Compare numerically.
+function sameEvmAddress(a, b) {
+  try { return BigInt(String(a)) === BigInt(String(b)); } catch (_) { return false; }
+}
+
 function encodeWithdrawal(plan, expectedMode, expectedDestination, expectedVault) {
   const mode = String(expectedMode || "").toLowerCase();
   if (!['mutual', 'escape'].includes(mode) || plan?.mode !== mode) {
@@ -127,7 +133,7 @@ function encodeWithdrawal(plan, expectedMode, expectedDestination, expectedVault
   if (destination !== String(expectedDestination || "").toLowerCase()) {
     throw new Error("The proof destination does not match the requested withdrawal address.");
   }
-  if (expectedVault && String(inputs.contract_address).toLowerCase() !== String(expectedVault).toLowerCase()) {
+  if (expectedVault && !sameEvmAddress(inputs.contract_address, expectedVault)) {
     throw new Error("The withdrawal proof is bound to a different vault contract.");
   }
   if (Boolean(inputs.has_clearance) !== (mode === "mutual")) {

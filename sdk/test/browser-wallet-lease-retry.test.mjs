@@ -835,6 +835,17 @@ test('a key near server settlement is renewed before starting a long stream', as
     assert.equal(lease.api_key, 'fresh-safe-key');
 });
 
+// Levanto: another tab counts as alive only while it holds its Web Lock.
+async function holdOtherTab(ownerId) {
+    if (!globalThis.navigator?.locks?.request) return () => {};
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    await new Promise(acquired => {
+        navigator.locks.request(`zkapi-tab-alive:${ownerId}`, () => { acquired(); return held; });
+    });
+    return release;
+}
+
 test('cross-tab ownership lasts through settlement, not merely usable expiry', async () => {
     const runtime = runtimeForLeaseRequests();
     runtime.init = async () => {};
@@ -848,10 +859,15 @@ test('cross-tab ownership lasts through settlement, not merely usable expiry', a
         }
     };
 
-    await assert.rejects(
-        runtime.ensureLease('chat-session'),
-        error => error.code === 'lease_tab_conflict'
-    );
+    const release = await holdOtherTab('other-tab');
+    try {
+        await assert.rejects(
+            runtime.ensureLease('chat-session'),
+            error => error.code === 'lease_tab_conflict'
+        );
+    } finally {
+        release();
+    }
 });
 
 test('startup recovery does not retire another tab during its settlement window', async () => {
@@ -879,10 +895,44 @@ test('startup recovery does not retire another tab during its settlement window'
         return { status: 'finalized' };
     };
 
-    const recovered = await runtime.recoverPending({ retireLostKey: true });
+    const release = await holdOtherTab('other-tab');
+    let recovered;
+    try {
+        recovered = await runtime.recoverPending({ retireLostKey: true });
+    } finally {
+        release();
+    }
 
     assert.equal(recovered, false);
     assert.equal(retireCalls, 0);
+});
+
+test('startup recovery retires a key whose owner tab has closed', { skip: !globalThis.navigator?.locks?.query }, async () => {
+    const runtime = runtimeForLeaseRequests();
+    const now = Math.floor(Date.now() / 1000);
+    runtime.manifest = { deployment_id: 'focused-test' };
+    runtime.ownerId = 'this-tab';
+    runtime.runtime = {
+        journal: {
+            prepared_request: { client_request_id: 'closed-tab-request' },
+            nullifier: 'closed-tab-nullifier'
+        },
+        lease: { ownerId: 'closed-tab', expires_at: now + 3000, settle_after: now + 3040 }
+    };
+    runtime.activeLease = null;
+    runtime.reload = async () => runtime.runtime;
+    runtime.remoteJson = async () => ({ status: 'active' });
+    let retireCalls = 0;
+    runtime.retireRequest = async () => {
+        retireCalls += 1;
+        return { status: 'finalized' };
+    };
+    runtime.installRecoveredResponse = async () => true;
+
+    const recovered = await runtime.recoverPending({ retireLostKey: true });
+
+    assert.equal(retireCalls, 1);
+    assert.equal(recovered, true);
 });
 
 test('lease retirement honors Retry-After without changing the settlement request', async () => {
