@@ -61,7 +61,9 @@ const browserConfig = {
     billing_token_symbol: 'ETH',
     billing_token_decimals: 9,
     // Leases come from Levanto billing, not an OA org.
-    require_oa_key_source: false
+    require_oa_key_source: false,
+    // Keys go to agents: reopening the page must not end them.
+    retire_lost_key_on_start: false
 };
 await fs.writeFile(path.join(out, 'zkapi', 'browser-config.json'), `${JSON.stringify(browserConfig, null, 2)}\n`);
 

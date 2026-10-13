@@ -1,9 +1,10 @@
-// Levanto zkAPI page: deposit ETH into the vault, get short-lived Sage keys
-// from private proofs, withdraw. All wallet state lives in this browser (SDK).
-import { configureBrowserSdk, zkapiClient as client, CHAT_SPENDING_TIER_USD } from '../../sdk/index.js';
+// Levanto zkAPI page: deposit ETH into the vault, get a 30-day Sage key for an
+// agent from a private proof, withdraw. The note lives in this browser (SDK);
+// the key goes to the agent.
+import { configureBrowserSdk, zkapiClient as client, browserWalletRuntime, CHAT_SPENDING_TIER_USD } from '../../sdk/index.js';
 
 const NETWORK = document.body.dataset.network; // 'sepolia' | 'mainnet', set at build time
-const SAGE_MODEL = 'sage-latest'; // alias that follows Sage upgrades
+const SAGE_BASE = 'https://sage.levanto.ai';
 const SESSION = 'levanto-zkapi-page';
 const MAX_DEPOSIT_USD = 50;
 
@@ -11,15 +12,15 @@ const $ = id => document.getElementById(id);
 const el = {
   status: $('status'), walletLine: $('wallet-line'), connect: $('btn-connect'), password: $('btn-password'),
   depositUsd: $('deposit-usd'), depositQuote: $('deposit-quote'), deposit: $('btn-deposit'),
-  depositForm: $('deposit-form'), depositTitle: $('deposit-title'), balanceView: $('balance-view'),
+  depositTitle: $('deposit-title'), balanceView: $('balance-view'),
   balUsd: $('bal-usd'), balEth: $('bal-eth'), balExpiry: $('bal-expiry'),
-  ask: $('btn-ask'), tryState: $('try-state'), tryQuestion: $('try-question'), answer: $('answer'),
-  keyCap: $('key-cap'), key: $('btn-key'), keyView: $('key-view'),
+  keyCap: $('key-cap'), key: $('btn-key'), keyView: $('key-view'), keySum: $('key-sum'), skill: $('btn-skill'),
   withdrawTo: $('withdraw-to'), withdraw: $('btn-withdraw')
 };
 
 let busy = false;
 let snap = null;
+let issued = null; // { apiKey, expires: Date, cap } for the key shown on this page
 
 // ---- status ---------------------------------------------------------------
 
@@ -100,25 +101,25 @@ const short = a => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : '');
 
 function render() {
   const s = snap || {};
-  const connected = Boolean(s.walletAddress || client.walletAddress);
+  const address = s.walletAddress || client.walletAddress;
+  const connected = Boolean(address);
   const note = s.wallet?.note || null;
   const hasNote = Boolean(s.wallet?.has_note && note);
   const locked = NETWORK === 'sepolia' && !client.testnetAuthenticated;
+  const step = id => document.getElementById(id).classList;
 
   el.password.hidden = !locked;
-  el.connect.textContent = connected ? 'Connected' : 'Connect wallet';
   el.connect.disabled = busy || connected;
-  el.walletLine.textContent = connected
-    ? `${short(s.walletAddress || client.walletAddress)} on ${NETWORK === 'sepolia' ? 'Sepolia' : 'Ethereum'}`
-    : 'Connect the wallet you\'ll deposit from.';
-  $('step-wallet').classList.toggle('done', connected);
+  el.connect.textContent = connected ? 'Connected' : 'Connect wallet';
+  el.walletLine.textContent = connected ? `${short(address)} · ${NETWORK === 'sepolia' ? 'Sepolia' : 'Ethereum'}` : '';
+  step('step-wallet').toggle('done', connected);
 
-  el.depositForm.hidden = hasNote;
-  el.balanceView.hidden = !hasNote;
   el.depositTitle.textContent = hasNote ? 'Balance' : 'Deposit';
+  el.balanceView.hidden = !hasNote;
   el.deposit.disabled = busy || !connected;
-  $('step-deposit').classList.toggle('done', hasNote);
-  $('step-deposit').classList.toggle('locked', !connected && !hasNote);
+  step('step-deposit').toggle('done', hasNote);
+  step('step-deposit').toggle('locked', !connected && !hasNote);
+  el.balExpiry.hidden = !hasNote;
   if (hasNote) {
     el.balUsd.textContent = client.formatMoney(note.current_balance);
     el.balEth.textContent = `${trimEth(client.formatBillingAmount(note.current_balance))} ETH`;
@@ -127,12 +128,21 @@ function render() {
       : '';
   }
 
-  el.ask.disabled = busy || !hasNote;
+  const lease = activeLease();
+  el.keySum.textContent = lease ? `Active until ${fmtDate(lease.expires)} · up to $${lease.cap}` : '';
   el.key.disabled = busy || !hasNote;
-  $('step-use').classList.toggle('locked', !hasNote);
+  step('step-use').toggle('locked', !hasNote);
   el.withdraw.disabled = busy || !hasNote || !connected;
-  $('step-withdraw').classList.toggle('locked', !hasNote);
+  step('step-withdraw').toggle('locked', !hasNote);
 }
+
+function activeLease() {
+  // After a reload the key is only in the agent's hands; the SDK still keeps its record.
+  const l = snap?.config?.active_lease || browserWalletRuntime.runtime?.lease;
+  const expires = l?.expires_at ? new Date(Number(l.expires_at) * 1000) : null;
+  return expires && expires > new Date() ? { expires, cap: Number(l.spending_limit_usd) } : null;
+}
+const fmtDate = d => d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 const trimEth = v => String(v).replace(/(\.\d*?[1-9])0+$/, '$1').replace(/\.0+$/, '');
 
@@ -171,81 +181,91 @@ el.deposit.addEventListener('click', () => run('Preparing your deposit…', asyn
   say('Deposit confirmed. Your private balance is ready.');
 }));
 
-function tabs() {
-  for (const button of document.querySelectorAll('[role="tab"]')) {
-    button.addEventListener('click', () => {
-      for (const other of document.querySelectorAll('[role="tab"]')) other.setAttribute('aria-selected', String(other === button));
-      for (const panel of document.querySelectorAll('[data-panel]')) panel.hidden = panel.dataset.panel !== button.dataset.tab;
-    });
+// Right after a deposit the indexer may not have the new note yet (it polls every few seconds).
+async function indexed(fn) {
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try { return await fn(); }
+    catch (error) {
+      if (!/tree snapshot|stale.?root|note index/i.test(String(error?.message || error)) || Date.now() > deadline) throw error;
+      say('Waiting for the deposit to be indexed…');
+      await new Promise(resolve => setTimeout(resolve, 5000));
+    }
   }
 }
 
 async function acquire(cap) {
   await client.ensureTestnetAccess({ interactive: true });
-  return settled(() => client.acquireInferenceAccess(SESSION, {
+  return indexed(() => settled(() => client.acquireInferenceAccess(SESSION, {
     spendingLimitUsd: cap,
     onProgress: p => { if (p?.message) say(p.message); }
-  }));
+  })));
 }
 
-el.ask.addEventListener('click', () => run('Getting a private key…', async () => {
-  const access = await acquire(Number(el.keyCap.value) || CHAT_SPENDING_TIER_USD[0]);
-  let response, body;
-  try {
-    say('Asking Sage…');
-    response = await fetch(`${access.baseUrl}/systemone`, {
-      method: 'POST',
-      headers: { authorization: access.headers.authorization, 'content-type': 'application/json' },
-      credentials: 'omit',
-      body: JSON.stringify({
-        state: el.tryState.value.trim(),
-        model: SAGE_MODEL,
-        questions: { q: { type: 'noul', instructions: el.tryQuestion.value.trim(), criteria: { true: 'yes', false: 'no' } } }
-      })
-    });
-    body = await response.json().catch(() => ({}));
-  } finally {
-    access.release();
+el.key.addEventListener('click', () => run('Getting a key…', async () => {
+  const cap = Number(el.keyCap.value);
+  const live = activeLease();
+  if (live && !(issued && issued.cap === cap && issued.expires.getTime() === live.expires.getTime())
+      && !window.confirm(`An agent key is active until ${fmtDate(live.expires)}. A new key ends it. Continue?`)) {
+    throw new DOMException('Cancelled.', 'AbortError');
   }
-  if (response.status === 402) throw new Error('This key is used up or expired. Ask again for a new one.');
-  if (!response.ok) {
-    const detail = Array.isArray(body?.detail) ? body.detail.map(d => d?.msg).filter(Boolean).join('; ') : body?.detail;
-    throw new Error(detail || `Sage returned ${response.status}.`);
-  }
-  const p = Number(body?.answers?.q?.noul);
-  const tokens = body?.usage?.input_tokens;
-  el.answer.hidden = false;
-  el.answer.innerHTML = '';
-  const verdict = document.createElement('span'); verdict.className = 'verdict'; verdict.textContent = p >= 0.5 ? 'Yes' : 'No';
-  const meta = document.createElement('span'); meta.className = 'meta';
-  meta.textContent = `confidence ${(Math.max(p, 1 - p) * 100).toFixed(0)}%${tokens ? ` · ${tokens} tokens` : ''}`;
-  el.answer.append(verdict, meta);
-  say('Charged from your private balance when the key settles.');
+  const access = await acquire(cap);
+  access.release(); // The agent calls with it, not this page.
+  const lease = activeLease();
+  issued = { apiKey: access.apiKey, expires: lease?.expires || new Date(Date.now() + 30 * 86400_000), cap };
+  $('key-value').textContent = issued.apiKey;
+  $('key-exp').textContent = fmtDate(issued.expires);
+  el.keyView.hidden = false;
+  say('Key ready.');
 }));
 
-el.key.addEventListener('click', () => run('Getting a private key…', async () => {
-  const access = await acquire(Number(el.keyCap.value));
-  access.release(); // The page doesn't call with it; the key stays valid until it expires.
-  const lease = client.snapshot?.()?.config?.active_lease || snap?.config?.active_lease;
-  const expires = lease?.expires_at ? new Date(Number(lease.expires_at) * 1000) : null;
-  $('key-value').textContent = access.apiKey;
-  $('key-base').textContent = access.baseUrl;
-  $('key-exp').textContent = expires ? expires.toLocaleTimeString(undefined, { timeStyle: 'short' }) : '—';
-  $('key-curl').textContent = [
-    `curl ${access.baseUrl}/systemone \\`,
-    `  -H "Authorization: Bearer ${access.apiKey}" \\`,
-    `  -H "Content-Type: application/json" \\`,
-    `  -d '{"state":"I was charged twice.","model":"${SAGE_MODEL}","questions":{"billing":{"type":"noul","instructions":"Is this about billing?","criteria":{"true":"payments","false":"anything else"}}}}'`
-  ].join('\n');
-  el.keyView.hidden = false;
-  say('Key ready. Keep this tab open until it expires so your balance settles.');
-}));
+function skillMarkdown({ apiKey, expires, cap }) {
+  return `---
+name: sage-private
+description: Make typed decisions with Levanto Sage (yes/no, choice, score, rank, tags) using a prepaid key that can't be linked to whoever funded it. Use when you need to route, approve, block, score, rank or tag content.
+---
+
+# Sage, paid privately
+
+You have a prepaid Sage key, funded through zkAPI. It can't be linked to the wallet that paid for it.
+
+- Key: \`${apiKey}\`
+- Base URL: ${SAGE_BASE}
+- Valid until: ${expires.toISOString().replace('.000Z', 'Z')}
+- Spend cap: $${cap}
+
+Send it as \`Authorization: Bearer <key>\`. Keep it secret: anyone with it can spend the cap.
+When it expires or the cap is used up, Sage answers 402: ask your human for a new key.
+
+## Example
+
+\`\`\`bash
+curl ${SAGE_BASE}/decide \\
+  -H "Authorization: Bearer ${apiKey}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"content": "I was charged twice this month.", "question": {"id": "billing", "kind": "yesno", "instructions": "Is this about billing?"}}'
+\`\`\`
+
+## Everything else
+
+Decision kinds, batching, reasoning and examples: https://docs.levanto.ai/skill.md
+`;
+}
+
+el.skill.addEventListener('click', () => {
+  if (!issued) return;
+  const url = URL.createObjectURL(new Blob([skillMarkdown(issued)], { type: 'text/markdown' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: 'SKILL.md' });
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  say('Saved SKILL.md. Put it in your agent\'s skills folder.');
+});
 
 el.withdraw.addEventListener('click', () => run('Preparing your withdrawal…', async () => {
   const to = el.withdrawTo.value.trim();
   if (to && !/^0x[0-9a-fA-F]{40}$/.test(to)) throw new Error('That address doesn\'t look right.');
   const target = to || client.walletAddress;
-  if (!window.confirm(`Withdraw your whole balance to ${target} on ${NETWORK === 'sepolia' ? 'Sepolia' : 'Ethereum'}?`)) {
+  const live = activeLease() ? ' This ends the agent\'s key.' : '';
+  if (!window.confirm(`Withdraw your whole balance to ${target} on ${NETWORK === 'sepolia' ? 'Sepolia' : 'Ethereum'}?${live}`)) {
     throw new DOMException('Withdrawal cancelled.', 'AbortError');
   }
   await settled(() => client.withdraw('mutual', message => say(message), to ? { destination: to } : {}));
@@ -266,7 +286,7 @@ async function boot() {
     const option = document.createElement('option'); option.value = String(tier); option.textContent = `$${tier}`;
     el.keyCap.append(option);
   }
-  tabs();
+  el.keyCap.value = String(CHAT_SPENDING_TIER_USD[CHAT_SPENDING_TIER_USD.length - 1]);
   configureBrowserSdk({
     configUrl: '/zkapi/browser-config.json',
     workerUrl: '/zkapi/assets/zkapiWasmWorker.js',

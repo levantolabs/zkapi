@@ -3,135 +3,111 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Private ETH payments · Levanto</title>
-<meta name="description" content="Pay for Sage with ETH. Each call uses a short-lived key that Levanto can't link to your wallet.">
+<title>Private payments for decision models · Levanto</title>
+<meta name="description" content="Use Sage with zkAPI. Deposit ETH once, and every call runs on a temporary key that can't be linked to your wallet.">
 <meta name="referrer" content="no-referrer">
 <link rel="icon" href="/img/favicon.png">
 <link rel="preload" href="/fonts/geist-sans.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/img/veiled-thinker.webp" as="image">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body data-network="__NETWORK__">
-<header class="bar">
-  <a class="brand" href="https://levanto.ai" rel="noopener">Levanto</a>
-  <span class="net" id="net-pill" hidden>Sepolia test</span>
-  <nav><a href="https://docs.levanto.ai" rel="noopener">Docs</a></nav>
-</header>
+<div class="shell">
+  <section class="info">
+    <header class="bar">
+      <a class="brand" href="https://levanto.ai" rel="noopener">Levanto</a>
+      <span class="net" id="net-pill" hidden>Sepolia test</span>
+      <a class="docs" href="https://docs.levanto.ai" rel="noopener">Docs</a>
+    </header>
 
-<main>
-  <section class="hero">
-    <div class="hero-copy">
-      <h1>Pay for Sage.<br><em>Privately.</em></h1>
-      <p class="lede">Deposit ETH once. Each call runs on a short-lived key that Levanto can't link to your wallet.</p>
-      <a class="cta" href="#app">Get started</a>
+    <div class="copy">
+      <h1>Pay for decision models.<br><em>Privately.</em></h1>
+      <p class="lede">Use Sage with <a href="https://github.com/ethereum/zkapi" rel="noopener">zkAPI</a>. Deposit ETH once, and every call runs on a temporary key that can't be linked to your wallet.</p>
+
+      <ol class="how">
+        <li><b>Deposit</b> ETH once.</li>
+        <li><b>Get a key</b> for your agent. It lasts 30 days.</li>
+        <li><b>Your agent calls Sage.</b> You pay only what it uses.</li>
+      </ol>
     </div>
-    <figure class="hero-art" aria-hidden="true">
-      <img src="/img/veiled-thinker.webp" alt="" width="1024" height="1536">
-    </figure>
+
+    <footer class="info-foot">
+      <p class="fine">Deposits and withdrawals are public on Ethereum; your agent's calls can't be linked to them. Experimental: keep deposits small, and withdraw before clearing this browser's data. <a href="https://github.com/ethereum/zkapi" rel="noopener">zkAPI on GitHub ↗</a></p>
+      <div class="thanks">
+        <span class="thanks-label">Thanks to</span>
+        <a href="https://ai.ethereum.foundation" rel="noopener" title="Ethereum Foundation dAI team"><img src="/img/thanks/ef-dai.svg" alt="Ethereum Foundation dAI" height="30"></a>
+        <a class="oa" href="https://openanonymity.ai" rel="noopener">The Open Anonymity Project</a>
+      </div>
+    </footer>
   </section>
 
-  <section class="app" id="app" aria-live="polite">
-    <ol class="steps">
-      <li class="step" id="step-wallet">
-        <div class="num">01</div>
-        <div class="body">
-          <h2>Wallet</h2>
-          <p class="muted" id="wallet-line">Connect the wallet you'll deposit from.</p>
-          <div class="row">
-            <button id="btn-password" class="ghost" hidden>Enter test password</button>
-            <button id="btn-connect">Connect wallet</button>
-          </div>
-        </div>
-      </li>
-
-      <li class="step" id="step-deposit">
-        <div class="num">02</div>
-        <div class="body">
-          <h2 id="deposit-title">Deposit</h2>
-          <div id="deposit-form">
-            <label class="field">
-              <span>Amount</span>
-              <span class="money"><b>$</b><input id="deposit-usd" type="number" inputmode="decimal" min="1" max="50" step="1" value="10"></span>
-              <small id="deposit-quote" class="mono">&nbsp;</small>
-            </label>
-            <p class="note">Up to $50 while the protocol is new. You pay the network fee. Withdraw what's left at any time; after 90 days, the vault pays any remaining balance to Levanto.</p>
-            <button id="btn-deposit" disabled>Deposit</button>
-          </div>
-          <div id="balance-view" hidden>
-            <p class="balance"><span id="bal-usd">—</span><small class="mono" id="bal-eth"></small></p>
-            <p class="muted" id="bal-expiry"></p>
-          </div>
-        </div>
-      </li>
-
-      <li class="step" id="step-use">
-        <div class="num">03</div>
-        <div class="body">
-          <h2>Use Sage</h2>
-          <div class="tabs" role="tablist">
-            <button role="tab" aria-selected="true" data-tab="try">Try it</button>
-            <button role="tab" aria-selected="false" data-tab="key">API key</button>
-          </div>
-          <div class="tab" data-panel="try">
-            <label class="field"><span>Text</span>
-              <textarea id="try-state" rows="3">I was charged twice this month. Please refund one charge.</textarea></label>
-            <label class="field"><span>Yes/no question</span>
-              <input id="try-question" type="text" value="Is this about billing?"></label>
-            <button id="btn-ask" disabled>Ask Sage</button>
-            <div id="answer" class="answer" hidden></div>
-          </div>
-          <div class="tab" data-panel="key" hidden>
-            <label class="field"><span>Spending cap for this key</span>
-              <select id="key-cap"></select></label>
-            <p class="note">Only what you use is charged. The key stops working when it expires.</p>
-            <button id="btn-key" disabled>Get a key</button>
-            <div id="key-view" class="keybox" hidden>
-              <div class="kv"><span>Key</span><code id="key-value"></code><button class="ghost small" data-copy="key-value">Copy</button></div>
-              <div class="kv"><span>Base URL</span><code id="key-base"></code></div>
-              <div class="kv"><span>Expires</span><code id="key-exp"></code></div>
-              <pre id="key-curl" class="mono"></pre>
+  <section class="flow" aria-live="polite">
+    <img class="art" src="/img/veiled-thinker.webp" alt="" aria-hidden="true">
+    <div class="card" id="app">
+      <ol class="steps">
+        <li class="step" id="step-wallet">
+          <div class="head"><span class="num">1</span><h2>Wallet</h2><span class="sum" id="wallet-line"></span></div>
+          <div class="body">
+            <p class="hint">Connect the wallet you'll deposit from.</p>
+            <div class="row">
+              <button id="btn-password" class="ghost" hidden>Enter test password</button>
+              <button id="btn-connect">Connect wallet</button>
             </div>
           </div>
-        </div>
-      </li>
+        </li>
 
-      <li class="step" id="step-withdraw">
-        <div class="num">04</div>
-        <div class="body">
-          <h2>Withdraw</h2>
-          <label class="field"><span>To address</span>
-            <input id="withdraw-to" type="text" placeholder="Your connected wallet" spellcheck="false" autocomplete="off"></label>
-          <p class="note">Settles any open key first, then sends the rest of your balance.</p>
-          <button id="btn-withdraw" class="ghost" disabled>Withdraw</button>
-        </div>
-      </li>
-    </ol>
-    <p id="status" class="status mono" role="status"></p>
+        <li class="step" id="step-deposit">
+          <div class="head"><span class="num">2</span><h2 id="deposit-title">Deposit</h2><span class="sum" id="balance-view" hidden><b id="bal-usd">—</b> <span class="mono" id="bal-eth"></span></span></div>
+          <div class="body" id="deposit-form">
+            <div class="row">
+              <span class="money"><b>$</b><input id="deposit-usd" type="number" inputmode="decimal" min="1" max="50" step="1" value="10" aria-label="Amount in US dollars"></span>
+              <button id="btn-deposit" disabled>Deposit</button>
+              <small id="deposit-quote" class="mono">&nbsp;</small>
+            </div>
+            <p class="hint">Up to $50. Withdraw any time; after 90 days, what's left goes to Levanto.</p>
+          </div>
+          <p class="hint expiry" id="bal-expiry"></p>
+        </li>
+
+        <li class="step" id="step-use">
+          <div class="head"><span class="num">3</span><h2>Agent key</h2><span class="sum" id="key-sum"></span></div>
+          <div class="body">
+            <div class="row">
+              <label class="inline">Cap <select id="key-cap"></select></label>
+              <button id="btn-key" disabled>Get key</button>
+            </div>
+            <p class="hint">Valid 30 days. Your agent can spend up to the cap.</p>
+            <div id="key-view" class="keybox" hidden>
+              <div class="kv"><span>Key</span><code id="key-value"></code><button class="ghost small" data-copy="key-value">Copy</button></div>
+              <div class="kv"><span>Expires</span><code id="key-exp"></code></div>
+              <button id="btn-skill">Download agent skill</button>
+              <p class="hint">Shown once. Save it now.</p>
+            </div>
+          </div>
+        </li>
+
+        <li class="step" id="step-withdraw">
+          <div class="head"><span class="num">4</span><h2>Withdraw</h2></div>
+          <div class="body">
+            <div class="row">
+              <input id="withdraw-to" type="text" placeholder="To your connected wallet, or paste an address" spellcheck="false" autocomplete="off" aria-label="Withdraw to address">
+              <button id="btn-withdraw" class="ghost" disabled>Withdraw</button>
+            </div>
+            <p class="hint">Ends the agent's key.</p>
+          </div>
+        </li>
+      </ol>
+      <p id="status" class="status mono" role="status"></p>
+    </div>
   </section>
-
-  <section class="how">
-    <h2>How it works</h2>
-    <ol>
-      <li><b>Deposit.</b> Your ETH goes into an open-source vault contract, as a private note only your browser can spend.</li>
-      <li><b>Prove, don't reveal.</b> Your browser proves it holds enough balance without saying which deposit is yours, and gets a short-lived key.</li>
-      <li><b>Call Sage.</b> Use the key like any API key. When it expires, only what you used comes off your balance.</li>
-    </ol>
-    <p class="muted small">Experimental: the protocol is new and unaudited. Keep deposits small. Your note lives in this browser; clearing site data before withdrawing loses it. Built on <a href="https://github.com/levantolabs/zkapi" rel="noopener">zkAPI</a>.</p>
-  </section>
-</main>
-
-<footer class="foot">
-  <span>© Levanto</span>
-  <a href="https://levanto.ai" rel="noopener">levanto.ai</a>
-</footer>
+</div>
 
 <dialog id="pw-dialog">
   <form method="dialog" id="pw-form">
     <h2>Test password</h2>
-    <p class="muted">This Sepolia test is private. Enter the password you were given.</p>
+    <p class="hint">This Sepolia test is private. Enter the password you were given.</p>
     <input id="pw-input" type="password" autocomplete="off" required minlength="16">
     <p id="pw-error" class="error" hidden>That password didn't work.</p>
-    <div class="row"><button type="button" class="ghost" id="pw-cancel">Cancel</button><button type="submit">Continue</button></div>
+    <div class="row end"><button type="button" class="ghost" id="pw-cancel">Cancel</button><button type="submit">Continue</button></div>
   </form>
 </dialog>
 

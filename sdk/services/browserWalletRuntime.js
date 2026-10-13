@@ -359,7 +359,13 @@ class BrowserWalletRuntime extends EventTarget {
                     billingAsset: 'native_eth'
                 });
             }
-            await this.recoverPendingLocked({ retireLostKey: true, quiet: true });
+            // Levanto: a host that hands keys to agents sets retire_lost_key_on_start=false,
+            // so reopening the page doesn't end a key the agent still uses. The server
+            // settles it at expiry and the next startup installs that receipt.
+            await this.recoverPendingLocked({
+                retireLostKey: this.browserConfig?.retire_lost_key_on_start !== false,
+                quiet: true
+            });
         });
         this.channel = createWalletChannel(this.manifest.deployment_id, () => {
             // A channel notification can arrive while this tab is awaiting a
